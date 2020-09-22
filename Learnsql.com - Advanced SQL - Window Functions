@@ -1,0 +1,458 @@
+Use <window_function> OVER() to compute an aggregate for all rows in the query result.
+The window functions is applied after the rows are filtered by WHERE.
+The window functions are used to compute aggregates but keep details of individual rows at the same time.
+You can't use window functions in WHERE clauses.
+
+
+/* the sum of payments a given person made, and the fourth largest value of the sum of payments as a separate column */
+
+SELECT
+  first_name,
+  last_name,
+  SUM(payment_amount),
+  NTH_VALUE(SUM(payment_amount),4) 
+    OVER(ORDER BY 
+      SUM(payment_amount)
+        ROWS BETWEEN UNBOUNDED PRECEDING 
+          AND UNBOUNDED FOLLOWING)
+FROM single_rental
+JOIN customer
+  ON customer.id=single_rental.customer_id
+GROUP BY first_name, last_name;
+
+
+
+/*For each item in the purchase table, select its name (column item), price and the average price of all items*/
+
+SELECT item, price, ROUND(AVG(price) OVER (PARTITION BY item))
+FROM purchase
+
+OR
+
+SELECT
+  item,
+  price,
+  AVG(price) OVER()
+FROM purchase;
+
+
+/*Typically, OVER() is used to compare the current row with an aggregate. For example, we can compute the difference between employee's salary and the average salary.*/
+
+
+ /*calculate the difference between employee's salary and the average salary. */
+ 
+ SELECT
+  first_name,
+  last_name,
+  salary,
+  AVG(salary) OVER(),
+  salary - AVG(salary) OVER() as difference
+FROM employee;
+
+
+/*For each employee in table employee, select first and last name, years_worked, average of years spent in the company by all employees, 
+and the difference between the years_worked and the average as difference*/
+
+SELECT
+  first_name,
+  last_name,
+  years_worked,
+  AVG(years_worked) OVER(),
+  years_worked - AVG(years_worked) OVER() as difference
+FROM employee;
+
+
+Show all purchases from the department with id = 2. 
+We divide the price of the item purchased by the total price of all items purchased by that department. 
+to see what part of all expenditures each purchase constitutes.
+ 
+ 
+ SELECT
+  id,
+  item,
+  price,
+  CAST(price AS numeric) / SUM(price) OVER()
+FROM purchase
+WHERE department_id = 2;
+
+/*For all employees from department with department_id = 3, show their: first_name, last_name, salary,
+the difference of their salary to the average of all salaries in that department as difference.*/
+
+SELECT 	first_name,
+		last_name,
+		salary, 
+        CAST(salary AS numeric) - (AVG(salary) OVER()) as difference
+FROM employee
+WHERE department_id = '3'
+
+
+
+/*Show the id and name of each department, plus the number of all departments. At the end, sort the rows by name.*/
+
+SELECT 
+  id, 
+  name, 
+  COUNT(id) OVER()
+FROM department
+ORDER BY name ASC;
+
+
+For each employee that earns more than 4000, show their first_name, last_name, salary and the number of all employees who earn more than 4000.
+
+
+SELECT 	first_name,
+		last_name, 
+        salary, 
+        COUNT(id) OVER () AS number_of_employees
+FROM employee
+WHERE salary > '4000'
+
+
+For each purchase with department_id = 3, show its: mid, department_id, item, price,
+maximum price from all purchases in this department,
+the difference between the maximum price and the price.
+
+
+SELECT	id,
+		department_id,
+		item,
+		price, 
+    MAX(price)OVER(),
+    MAX(price)OVER()- price AS difference
+FROM purchase
+WHERE department_id = '3'
+
+
+ !!!! Window functions are always executed AFTER the WHERE clause, so they work on whatever they find as the result.!!!!
+ 
+/*Show the first_name, last_name and salary of every person who works in departments with id 1, 2 or 3, along with the average salary calculated in those three departments*/
+
+SELECT 	first_name,
+		last_name, 
+    	salary,
+        AVG(salary) OVER()
+FROM employee
+WHERE department_id IN ('1','2','3')
+
+
+
+/*For each purchase, show its: id, the name of the department, the item, the price,
+the minimum price from all the rows in the query result,
+the difference between the price and the minimum price.*/
+
+
+
+SELECT department_id, 
+		name, 
+        item, 
+        price,
+        MIN(price) OVER(),
+        price - MIN(price) OVER() as dif
+FROM purchase JOIN department on department.id = purchase.department_id
+
+
+
+!!!!PARTITION BY works in a similar way as GROUP BY: it partitions the rows into groups, based on the columns in PARTITION BY clause. 
+Unlike GROUP BY, PARTITION BY does not collapse rows.
+With PARTITION BY, you can easily compute the statistics for the whole group but keep details about individual rows!!!!
+
+
+
+/*For each train, the query returns its id, model, first_class_places and the sum of first class places from the same models of trains.*/
+
+SELECT
+  id,
+  model,
+  first_class_places,
+  SUM(first_class_places) OVER (PARTITION BY model)
+FROM train;
+
+
+Show the id of each journey, its date and the number of journeys that took place on that date.
+
+SELECT id, date, COUNT(id) OVER (PARTITION BY date)
+FROM journey
+
+
+
+!!!!!!!Note that window functions only work for those rows which are indeed returned by the query. Take a look at this query:
+
+SELECT
+  id,
+  model,
+  max_speed,
+  COUNT(id) OVER (PARTITION BY max_speed)
+FROM train
+WHERE production_year != 2012;
+
+We cut out the trains with production_year = 2012 and the query would not show them – that's pretty obvious. 
+But the window function would not even count them – we could find out that there are only 2 trains with max_speed = 240, even though there is a third one which was produced in 2012. 
+Note that a GROUP BY clause with a WHERE clause will behave in the same way – GROUP BY will only take into account rows which match the condition(s).!!!!!!
+
+
+
+/*Show id, model,first_class_places, second_class_places, and the number of trains of each model with more than 30 first class places and more than 180 second class places.*/
+
+
+SELECT 	id, 
+		model,
+        first_class_places,
+        second_class_places,
+        COUNT(id) OVER (PARTITION BY model)
+FROM train
+WHERE 	first_class_places > 30 AND
+		    second_class_places > 180
+    
+  /*Show each ticket with the sum of all tickets on the particular route on the particular date. 
+  Neither of the tables would suffice on its own, so we had to join them together to get all the columns.  */
+   
+   
+   SELECT
+        route_id,
+        ticket.id,
+        ticket.price,
+        SUM(price) OVER (PARTITION BY route_id, date)
+FROM ticket
+    JOIN journey
+        ON ticket.journey_id = journey.id;
+        
+        
+          
+/*Show the id of each journey, the date on which it took place, the model of the train that was used, 
+the max_speed of that train and the highest max_speed from all the trains that ever went on the same route on the same day.*/
+
+SELECT 	journey.id, 
+		journey.date, 
+        train.model, 
+        train.max_speed, 
+        MAX(train.max_speed)
+        	OVER (PARTITION BY journey.route_id, journey.date)
+FROM journey 
+	JOIN train 
+    	ON journey.train_id = train.id
+      
+      
+/*For each journey, show its id, the production_year of the train on that journey, the number of journeys the train took and the number of journeys on the same route*/
+
+SELECT 	journey.id, 
+		train.production_year, 
+        COUNT (journey.id) OVER (PARTITION BY journey.train_id), 
+        COUNT (journey.id) OVER (PARTITION BY journey.route_id)
+FROM train 
+	JOIN journey 
+    	ON train.id=journey.train_id
+      
+      
+      
+/*For each ticket, show its id, price, date of its journey, the average price of tickets sold on that day and 
+the number of tickets sold on that day. Exclude journeys with train_id = 5.*/
+
+SELECT ticket.id, 
+		ticket.price, 
+        journey.date, 
+        COUNT(ticket.id) OVER (PARTITION BY journey.date), 
+        AVG((ticket.price) OVER (PARTITION BY journey.date)
+FROM ticket 
+     JOIN journey 
+          ON ticket.journey_id = journey.id
+WHERE train_id NOT IN '5'
+
+
+For each ticket, show its id, price and, the column named ratio. The ratio is the ticket price to the sum of all ticket prices purchased on the same journey.
+
+SELECT  id, 
+        price, 
+        price::numeric / SUM (price) OVER (PARTITION BY journey_id)  as ratio
+FROM ticket
+
+
+
+OVER(PARTITION BY x) works in a similar way to GROUP BY, defining the window as all the rows in the query result that have the same value in x.
+x can be a single column or multiple columns separated by commas.
+
+
+
+For each employee, show their first_name, last_name, department, salary, as well as the minimal and maximal salary in that department.
+
+SELECT 	first_name, 
+		    last_name, 
+        department, 
+        salary,
+		    MIN(salary) OVER (PARTITION BY department),
+        MAX(salary)OVER (PARTITION BY department)
+FROM employee
+
+
+%For each employee, show their first_name, last_name, department, salary and the proportion of their salary to the sum of all salaries in that department. 
+To avoid the integer division remember to CAST the dividend to numeric.%
+
+SELECT  first_name, 
+		  last_name, 
+        department, 
+        salary, 
+      	CAST(salary AS numeric)  / SUM(salary) OVER (PARTITION BY department) 
+FROM employee
+
+
+!!!!!/*Ranking functions. The general syntax is as follows:
+<ranking function> OVER (ORDER BY <order by columns>)
+
+As to OVER (ORDER BY col1, col2...), this is the part where you specify the order in which rows should be sorted and therefore ranked.
+RANK() OVER(ORDER BY ...) is a function that shows the rank(place, position) of each row in a separate column. */ !!!!!
+
+
+
+/* return the rank (RANK()) of each row when we sort them by the column editor_rating (OVER(ORDER BY editor_rating). */
+
+SELECT
+  name,
+  platform,
+  editor_rating,
+  RANK() OVER(ORDER BY editor_rating)
+FROM game;
+
+
+
+we get the rank of each game in the last column. There are 3 games with the lowest score – 4. All of them got rank 1.
+
+The next game, with score 5, got rank 4, not 2. That's how RANK() works. 
+There were three games before the game with score 5, so, being the 4th game, it got rank 4 – regardless of the fact that the other three all got rank 1. 
+RANK() will always leave gaps in numbering when more than 1 row share the same value.
+
+
+For each game, show name, genre, date of update and its rank. The rank should be created with RANK() and take into account the date of update.
+
+SELECT 	game.name,
+		    genre,
+        updated,
+        RANK () OVER (ORDER BY updated)
+FROM game
+
+
+RANK() will always leave gaps in numbering when more than 1 row share the same value. You can change that behavior by using another function: DENSE_RANK()
+
+SELECT
+  name,
+  platform,
+  editor_rating,
+  DENSE_RANK() OVER(ORDER BY editor_rating)
+FROM game;
+
+DENSE_RANK gives a 'dense' rank indeed, i.e. there are no gaps in numbering.We've now got three rows with rank 1, followed by a fourth row with rank 2.
+That's the difference between RANK() and DENSE_RANK() – the latter never leaves gaps.
+
+
+Use DENSE_RANK() and for each game, show name, size and the rank in terms of its size.
+
+SELECT 
+	game.name, 
+    game.size,
+    DENSE_RANK() OVER (ORDER BY game.size)
+FROM game
+
+Using ROW_NUMBER() each row gets its own, unique rank number, so even rows with the same value get consecutive numbers.
+
+
+SELECT
+  name,
+  platform,
+  editor_rating,
+  ROW_NUMBER() OVER(ORDER BY editor_rating)
+FROM game;
+
+
+Use ROW_NUMBER() and for each game, show their name, date of release and the rank based on the date of release.
+
+SELECT game.name, 
+       released, 
+       ROW_NUMBER () OVER (ORDER BY released)
+FROM game
+
+
+For each game, show its name, genre and date of release. In the next three columns, show RANK(), DENSE_RANK() and ROW_NUMBER() sorted by the date of release.
+
+SELECT 	game.name, 
+		genre, 
+        released, 
+		RANK() OVER (ORDER BY released), 
+		DENSE_RANK() OVER (ORDER BY released),
+		ROW_NUMBER() OVER (ORDER BY released)
+FROM game
+
+
+add DESC after the column name in OVER( ... ) and the ranking order is reversed.
+
+SELECT
+  name,
+  platform,
+  editor_rating,
+  RANK() OVER(ORDER BY editor_rating DESC)
+FROM game;
+
+
+
+Let's use DENSE_RANK() to show the latest games from our studio. For each game, show its name, genre, date of release and DENSE_RANK() in the descending order.
+
+
+SELECT 	game.name, 
+		    genre, 
+        released, 
+        DENSE_RANK () OVER (ORDER BY released DESC)
+FROM game
+
+
+rank by multiple columns, each of them in the ascending or descending order of your choice
+
+Let's pretend that a player named John has limited space on his phone, but he wants to install a relatively recent game
+We first sort the rows by the release date, with the latest games coming first, and then by size, with the smallest games appearing before bigger games.
+
+SELECT
+  name,
+  genre,
+  editor_rating,
+  RANK() OVER(ORDER BY released DESC, size ASC)
+FROM game;
+
+
+We want to find games which were both recently released and recently updated. For each game, show name, date of release and last update date, as well as their rank: 
+use ROW_NUMBER(), sort by release date and then by update date, both in the descending order.
+
+
+
+SELECT 	game.name, 
+		released,
+        updated,
+        ROW_NUMBER () OVER (ORDER BY released DESC, updated DESC)
+FROM game
+
+
+ The ranking function and the external ORDER BY are independent. The ranking function returns the rank with the respect to the order provided within OVER
+ 
+ SELECT
+     name,
+     RANK() OVER (ORDER BY editor_rating)
+FROM game
+ORDER BY size DESC;
+
+The query returns the name of the game and the rank of the game with respect to editor ranking. The returned rows are ordered by size of the game in descending way.
+
+
+/*For each game find its name, genre, its rank by size. Order the games by date of release with newest games coming first.*/
+
+SELECT game.name, genre, RANK () OVER (ORDER BY game.size)
+FROM game	
+ORDER BY released DESC
+
+
+
+For each purchase, find the name of the game, the price, and the date of the purchase. 
+Give purchases consecutive numbers by date when the purchase happened, so that the latest purchase gets number 1.
+Order the result by editor's rating of the game.
+
+
+SELECT 	game.name, 
+    		purchase.price,
+            purchase.date,
+    		ROW_NUMBER() OVER(ORDER BY purchase.date DESC)
+    FROM purchase JOIN game ON game.id=purchase.game_id  
+    ORDER BY editor_rating
