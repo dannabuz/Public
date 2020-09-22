@@ -1,0 +1,377 @@
+ANALYZING TRAFFIC SOURCES
+
+
+--Find the best performing campaigns. we need to sort by conversion rate
+
+SELECT utm_content, 
+	COUNT(DISTINCT s.website_session_id) AS Sessions, 
+    	COUNT(DISTINCT o.order_id) AS Orders,
+    	COUNT(DISTINCT o.order_id)/COUNT(DISTINCT s.website_session_id) AS conversion_rate
+From website_sessions s
+	LEFT JOIN orders o 
+		ON s.website_session_id=o.website_session_id
+GROUP BY 1
+ORDER BY 4 DESC
+
+
+
+/*Site traffic breakdown by UTM Source, campaign and referring domain /*
+/*The best performing campaign in terms of sessions needs a deeper analysis to see whether we are bidding correctly for that compared to other campaigns that are not performing as good /*
+SELECT
+	utm_source,
+    	utm_campaign,
+    	http_referer,
+    	COUNT(DISTINCT website_session_id) AS Sessions
+FROM website_sessions
+WHERE created_at > '2012-04-12'
+GROUP BY 
+	utm_source,
+    	utm_campaign,
+    	http_referer
+ORDER BY Sessions DESC
+
+
+
+/*calculate the conversion rate from sessions to orders for campaign 'nonbrand' and source 'gsource', looking for conversion rate higher than 4% in order to make the numbers work /*
+/* the conversion rate is lower than 4%, which means we are bidding to high/ we need to adjust our bidding based on the result. we saved money by doing this analysis. /*
+
+SELECT 
+	COUNT(DISTINCT s.website_session_id) AS Sessions, 
+    	COUNT(DISTINCT o.order_id) AS Orders,
+    	COUNT(DISTINCT o.order_id)/COUNT(DISTINCT s.website_session_id) AS conversion_rate
+FROM website_sessions s
+	LEFT JOIN orders o
+    ON s.website_session_id=o.website_session_id
+WHERE s.created_at < '2012-04-14'
+	AND utm_source = 'gsearch'
+    AND utm_campaign = 'nonbrand'
+    
+
+
+/* find all orders that have 1 items and 2 items and % of total orders/*
+
+
+/* work in steps. /*
+/*first, check  for orders with one item, orders with 2 items/*
+
+SELECT 	order_id, 
+	primary_product_id, 
+    	items_purchased,
+	CASE WHEN items_purchased = '1' THEN order_id ELSE null END) as single_item_orders,
+	CASE WHEN items_purchased = '2' THEN order_id ELSE null END) as two_item_orders,
+FROM orders
+GROUP BY 1,2,3
+
+/*then count and find percentage of total orders/*
+
+SELECT primary_product_id, 
+	COUNT(DISTINCT CASE WHEN items_purchased = '1' THEN order_id ELSE null END) as count_of_single_item_orders,
+	COUNT(DISTINCT CASE WHEN items_purchased = '2' THEN order_id ELSE null END) as count_of_two_item_orders,
+	COUNT(DISTINCT order_id) AS total_orders,
+	COUNT(DISTINCT CASE WHEN items_purchased = '1' THEN order_id ELSE null END)/COUNT(DISTINCT order_id) as one_item_orders_percent_of_total_orders,
+	COUNT(DISTINCT CASE WHEN items_purchased = '2' THEN order_id ELSE null END)/COUNT(DISTINCT order_id) as two_items_orders_percent_of_total_orders
+FROM orders
+GROUP BY 1
+ORDER BY COUNT(DISTINCT order_id) DESC
+
+
+
+/*pull trended session volume by week for campaign nonbrand, source gsearch to see if the bid changes (bid down) caused any drops in volume. need to look into data between 2012-04-15 and 2012_05_10 
+
+
+/*Step 1: check to pull the right time frame by using data functions/*
+
+SELECT 
+	YEAR(created_at),
+    	WEEK(created_at),
+	COUNT(DISTINCT website_session_id) AS Sessions
+FROM website_sessions
+WHERE created_at BETWEEN ('2012-03-15') AND ('2012-05-10') --we need to go 4 weeks back to have a trended view and be able to make decisions
+	AND utm_campaign in ('nonbrand')
+    AND utm_source in ('gsearch')
+GROUP BY 1, 2
+
+/*Step 2: when you are sure you are pulling the right data, make the query easier to read by using a more friendly date format /*
+
+SELECT
+    MIN(DATE(created_at)) AS week_start,
+	COUNT(DISTINCT website_session_id) AS Sessions
+FROM website_sessions
+WHERE created_at BETWEEN ('2012-03-15') AND ('2012-05-10')
+	AND utm_campaign in ('nonbrand')
+    AND utm_source in ('gsearch')
+GROUP BY 
+	YEAR(created_at),
+	WEEK(created_at) --we can group by columns that are not selected but we need to pay maximum attention
+/* indeed, bidding down also had an impact on volumes which went down
+
+
+
+/* pull session to orders conversion rates by device type to check if performance is better on mobile versus desktop and adjust bidding accordingly
+/* the results show that desktop is performing better than mobile
+
+SELECT
+    device_type,
+	COUNT(DISTINCT s.website_session_id) AS Sessions, 
+	COUNT(DISTINCT o.order_id) AS Orders,
+	COUNT(DISTINCT o.order_id)/COUNT(DISTINCT s.website_session_id) AS conversion_rate
+FROM website_sessions s
+	LEFT JOIN orders o
+    ON s.website_session_id=o.website_session_id
+WHERE s.created_at BETWEEN ('2012-03-15') AND ('2012-05-10')
+	AND utm_campaign in ('nonbrand')
+    AND utm_source in ('gsearch')
+GROUP BY device_type
+
+
+
+/* pull weekly trends for desktop sessions and mobile sessions to check for volume after bidding on desktop campaigns/*
+/*indeed desktop sessions have gone up after bidding higher while mobile sessions didn't show a visible increase during the same period. this means that more search was due to higher bidding/*
+SELECT
+    MIN(DATE(created_at)) AS week_start,
+	COUNT(DISTINCT CASE WHEN device_type = 'desktop' THEN website_session_id ELSE NULL END) AS Desktop_Sessions, 
+	COUNT(DISTINCT CASE WHEN device_type = 'mobile' THEN website_session_id ELSE NULL END) AS Mobile_Sessions
+FROM website_sessions
+WHERE created_at BETWEEN ('2012-04-15') AND ('2012-06-09')
+	AND utm_campaign in ('nonbrand')
+    AND utm_source in ('gsearch')
+GROUP BY 
+	YEAR(created_at),
+	WEEK(created_at)
+
+
+
+Find most viewed website pages ranked by  session volume
+
+To complete the first assignments when the time will allow
+
+A new landing page was introduced (/lander-1) in a 50-50 test against the homepage (/home) for traffic coming from gsearch nonbrand.
+Pull the bounce rates for the two groups to evaluate performance of the new page. Look at the time period where /lander-1 was getting traffic, for fair comparison.
+
+Multi-step solution: 
+STEP 0: find out then the new page/lander was launched
+STEP 1: find the first website_pageview_id for relevant sessions
+STEP 2:identify the landing page of each session
+STEP 3: count pageviews for each session to identify bounces
+STEP 4: summarize total sesions and bounced sessions
+
+
+STEP 0: find out then the new page/lander was launched
+
+2012-06-19 - First_created_at, 
+23504 - first_pageview_id
+we can use eather of the two to limit reults
+
+
+SELECT 
+	  MIN(created_at) AS first_created_at,
+    MIN(website_pageview_id) AS first_pageview_id
+FROM website_pageviews
+WHERE pageview_url = '/lander-1'
+	  AND created_at IS NOT NULL;
+
+
+STEP 1: find the first website_pageview_id for relevant sessions
+First check the results of the SELECT and then create the temp table.
+
+
+CREATE TEMPORARY TABLE first_test_pageviews2
+SELECT 
+	  WS.website_session_id,
+    MIN(WP.website_pageview_id) AS min_pageview_id
+FROM website_pageviews WP
+	INNER JOIN website_sessions WS
+		ON WS.website_session_id = WP.website_session_id
+        AND WS.created_at > '2012-07-28'
+        AND WP.website_pageview_id > 23504
+        AND utm_source = 'gsearch'
+        AND utm_campaign = 'nonbrand'
+GROUP BY WP.website_session_id
+
+
+Next, we'll bring in the landing page in each session, like last time, but restricting to home or lander-1 this time
+
+
+  CREATE TEMPORARY TABLE nonbrand_test_sessions_w_landing_page
+SELECT ftp2.website_session_id, 
+	  WP.pageview_url AS landing_page
+FROM first_test_pageviews2 ftp2
+	LEFT JOIN website_pageviews WP
+		ON WP.website_pageview_id = ftp2.min_pageview_id
+WHERE WP.pageview_url IN ('/home', '/lander-1')
+
+
+Next, we add a table to have a count of pageviews per session and then
+    Limit to just bounced sessions
+    
+ 
+CREATE TEMPORARY TABLE nonbrand_test_bounced_sessions
+SELECT 
+	  ntslp.website_session_id,
+	  ntslp.landing_page,
+	COUNT(WP.website_pageview_id) AS count_of_pages_viewed
+FROM nonbrand_test_sessions_w_landing_page ntslp
+	LEFT JOIN website_pageviews WP
+		ON ntslp.website_session_id = WP.website_session_id
+GROUP BY 
+	  ntslp.website_session_id,
+	  ntslp.landing_page
+HAVING 
+	  COUNT(WP.website_pageview_id) = 1;
+  
+  
+  Create a SELECT Statement to show the sessions that bounced and then adjust to get the count of sessions that bounced for each landing page. 
+ 
+ /Lander-1 has only 52% vs 58% for /Home
+  
+SELECT
+	  ntslp.website_session_id,
+	  ntslp.landing_page, 
+    ntbs.website_session_id AS bounced_website_session_id
+FROM nonbrand_test_sessions_w_landing_page ntslp	
+	LEFT JOIN nonbrand_test_bounced_sessions ntbs
+		ON ntbs.website_session_id = ntslp.website_session_id
+ORDER BY 
+	  ntslp.website_session_id;
+    
+
+ SELECT
+	   ntslp.landing_page, 
+     COUNT(DISTINCT ntslp.website_session_id) AS Sessions,
+     COUNT(DISTINCT ntbs.website_session_id) AS Bounced_sessions,
+     COUNT(DISTINCT ntbs.website_session_id)/COUNT(DISTINCT ntslp.website_session_id) AS Bounce_Rate
+FROM nonbrand_test_sessions_w_landing_page ntslp	
+	LEFT JOIN nonbrand_test_bounced_sessions ntbs
+		ON ntbs.website_session_id = ntslp.website_session_id
+GROUP BY 
+	  ntslp.landing_page
+    
+    
+    
+    
+    
+    Build a conversion funnel analyzing how many customers make it to each step
+
+STEP 1: Select all pageviews for relevant sessions
+STEP 2: Identify each pageview as the specific funnel step
+STEP 3:Create the session level conversion funnel
+STEP 4:aggregate the data to assess funnel performance
+
+
+SELECT
+		website_sessions.website_session_id,
+        website_pageviews.pageview_url,
+	CASE WHEN pageview_url = '/products' THEN 1 ELSE 0 END AS product_page,
+	CASE WHEN pageview_url = '/the-original-mr-fuzzy' THEN 1 ELSE 0 END AS mrfuzzy_page,
+	CASE WHEN pageview_url = '/cart' THEN 1 ELSE 0 END AS cart_page,
+	CASE WHEN pageview_url = '/shipping' THEN 1 ELSE 0 END AS shipping_page,
+	CASE WHEN pageview_url = '/billing' THEN 1 ELSE 0 END AS billing_page,
+	CASE WHEN pageview_url = '/thank-you-for-your-order' THEN 1 ELSE 0 END AS thankyou_page  
+FROM website_sessions
+	LEFT JOIN website_pageviews
+		ON website_sessions.website_session_id = website_pageviews.website_session_id
+WHERE website_sessions.utm_source = 'gsearch'
+	AND website_sessions.utm_campaign = 'nonbrand'
+    AND website_sessions.created_at > '2012-08-05'
+    AND website_sessions.created_at < '2012-09-05'
+ORDER BY
+	website_sessions.website_session_id,
+    website_pageviews.created_at;
+    
+    
+/*Then show this as session Level View of how far the session made it*/
+    
+SELECT
+website_session_id, 
+MAX(product_page) AS products_made_it,
+MAX(mrfuzzy_page) AS mrfuzzy_made_it,
+MAX(cart_page) AS cart_made_it,
+MAX(shipping_page) AS shipping_made_it,
+MAX(billing_page) AS billing_made_it,
+MAX(thankyou_page) AS thankyou_made_it
+
+FROM
+	(SELECT
+		website_sessions.website_session_id,
+        website_pageviews.pageview_url,
+	CASE WHEN pageview_url = '/products' THEN 1 ELSE 0 END AS product_page,
+	CASE WHEN pageview_url = '/the-original-mr-fuzzy' THEN 1 ELSE 0 END AS mrfuzzy_page,
+	CASE WHEN pageview_url = '/cart' THEN 1 ELSE 0 END AS cart_page,
+	CASE WHEN pageview_url = '/shipping' THEN 1 ELSE 0 END AS shipping_page,
+	CASE WHEN pageview_url = '/billing' THEN 1 ELSE 0 END AS billing_page,
+	CASE WHEN pageview_url = '/thank-you-for-your-order' THEN 1 ELSE 0 END AS thankyou_page  
+FROM website_sessions
+	LEFT JOIN website_pageviews
+		ON website_sessions.website_session_id = website_pageviews.website_session_id
+WHERE website_sessions.utm_source = 'gsearch'
+	AND website_sessions.utm_campaign = 'nonbrand'
+    AND website_sessions.created_at > '2012-08-05'
+    AND website_sessions.created_at < '2012-09-05'
+ORDER BY
+	website_sessions.website_session_id,
+    website_pageviews.created_at) 
+    AS pageview_level
+GROUP BY 	
+	website_session_id
+  
+/*Then transform the query into a TEMP Table as a flag to where the user made it*/
+
+
+CREATE TEMPORARY TABLE sessions_level_made_it_flags     
+SELECT
+website_session_id, 
+MAX(product_page) AS products_made_it,
+MAX(mrfuzzy_page) AS mrfuzzy_made_it,
+MAX(cart_page) AS cart_made_it,
+MAX(shipping_page) AS shipping_made_it,
+MAX(billing_page) AS billing_made_it,
+MAX(thankyou_page) AS thankyou_made_it
+
+FROM
+	(SELECT
+		website_sessions.website_session_id,
+        website_pageviews.pageview_url,
+	CASE WHEN pageview_url = '/products' THEN 1 ELSE 0 END AS product_page,
+	CASE WHEN pageview_url = '/the-original-mr-fuzzy' THEN 1 ELSE 0 END AS mrfuzzy_page,
+	CASE WHEN pageview_url = '/cart' THEN 1 ELSE 0 END AS cart_page,
+	CASE WHEN pageview_url = '/shipping' THEN 1 ELSE 0 END AS shipping_page,
+	CASE WHEN pageview_url = '/billing' THEN 1 ELSE 0 END AS billing_page,
+	CASE WHEN pageview_url = '/thank-you-for-your-order' THEN 1 ELSE 0 END AS thankyou_page  
+FROM website_sessions
+	LEFT JOIN website_pageviews
+		ON website_sessions.website_session_id = website_pageviews.website_session_id
+WHERE website_sessions.utm_source = 'gsearch'
+	AND website_sessions.utm_campaign = 'nonbrand'
+    AND website_sessions.created_at > '2012-08-05'
+    AND website_sessions.created_at < '2012-09-05'
+ORDER BY
+	website_sessions.website_session_id,
+    website_pageviews.created_at) 
+    AS pageview_level
+GROUP BY 	
+	website_session_id
+
+/*Then this would produce the final output*/
+
+SELECT   
+	COUNT(DISTINCT website_session_id) AS sessions,
+    COUNT(DISTINCT CASE WHEN products_made_it = 1 THEN website_session_id ELSE NULL END) AS to_products,
+    COUNT(DISTINCT CASE WHEN mrfuzzy_made_it = 1 THEN website_session_id ELSE NULL END) AS to_mrfuzzy,
+    COUNT(DISTINCT CASE WHEN cart_made_it = 1 THEN website_session_id ELSE NULL END) AS to_cart,
+    COUNT(DISTINCT CASE WHEN shipping_made_it = 1 THEN website_session_id ELSE NULL END) AS to_shippnig,
+    COUNT(DISTINCT CASE WHEN billing_made_it = 1 THEN website_session_id ELSE NULL END) AS to_billing,
+    COUNT(DISTINCT CASE WHEN thankyou_made_it = 1 THEN website_session_id ELSE NULL END) AS to_thankyou
+FROM sessions_level_made_it_flags;
+
+/*Then final outcome part 2:click rates*/
+
+
+SELECT   
+	COUNT(DISTINCT website_session_id) AS sessions,
+    COUNT(DISTINCT CASE WHEN products_made_it = 1 THEN website_session_id ELSE NULL END)/ COUNT(DISTINCT website_session_id) as products_click_rt,
+    COUNT(DISTINCT CASE WHEN mrfuzzy_made_it = 1 THEN website_session_id ELSE NULL END)/ COUNT(DISTINCT CASE WHEN products_made_it = 1 THEN website_session_id ELSE NULL END) mrfuzzy_click_rt,
+    COUNT(DISTINCT CASE WHEN cart_made_it = 1 THEN website_session_id ELSE NULL END)/ COUNT(DISTINCT CASE WHEN mrfuzzy_made_it = 1 THEN website_session_id ELSE NULL END) AS cart_click_rt,
+    COUNT(DISTINCT CASE WHEN shipping_made_it = 1 THEN website_session_id ELSE NULL END)/ COUNT(DISTINCT CASE WHEN cart_made_it = 1 THEN website_session_id ELSE NULL END) AS shippnig_click_rt,
+    COUNT(DISTINCT CASE WHEN billing_made_it = 1 THEN website_session_id ELSE NULL END)/ COUNT(DISTINCT CASE WHEN shipping_made_it = 1 THEN website_session_id ELSE NULL END) AS billing_click_rt,
+    COUNT(DISTINCT CASE WHEN thankyou_made_it = 1 THEN website_session_id ELSE NULL END)/ COUNT(DISTINCT CASE WHEN billing_made_it = 1 THEN website_session_id ELSE NULL END) AS thankyou_click_rt
+FROM sessions_level_made_it_flags;
