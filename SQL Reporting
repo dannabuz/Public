@@ -1,0 +1,58 @@
+SQL reports often require joining a lot of tables.
+Every column listed in the SELECT statement that's NOT used with an aggregate function must appear in the GROUP BY clause.
+Not every column from the GROUP BY clause must appear in the SELECT clause.
+Watch out when using COUNT().
+
+Type of count	What is counted
+COUNT(*)	counts all rows
+COUNT(column_name) counts	rows with non-NULL values in column_name
+COUNT(DISTINCT column_name)	only counts the unique non-NULL values in column_name
+Avoid using LEFT JOINs with COUNT(*). Use COUNT(column_name) instead.
+ 
+ 
+ 
+ the difference between COUNT(*) and COUNT(column_name)
+ 
+ 
+ Take a look at the query below:
+ 
+ SELECT
+      ship_country,
+      COUNT(*) AS all_orders,
+      COUNT(shipped_date) AS shipped_orders
+FROM orders
+GROUP BY ship_country;
+
+COUNT(*) will count all orders in ship_country. 
+COUNT(shipped_date) will count only the rows where the shipped_date column value is not NULL.  
+NULL in the shipped_date column means an order hasn't been shipped yet. In other words, COUNT(shipped_date) only counts orders that have already been shipped.
+
+
+
+count orders for three different customer IDs: 'ALFKI', 'FISSA', and 'PARIS'
+
+SELECT
+  c.customer_id,
+  COUNT(o.order_id) AS order_count
+FROM customers c
+LEFT JOIN orders o
+  ON o.customer_id = c.customer_id
+WHERE c.customer_id IN ('ALFKI', 'FISSA', 'PARIS')
+GROUP BY c.customer_id;
+
+Note the following:
+
+We used LEFT JOIN to make sure we'll see all three customer IDs in the report. 
+If we used a simple JOIN and any of the customers placed no orders, they would not be shown in the report.
+
+We used COUNT(o.order_id) instead of COUNT(*). This ensures that we only count rows with non-NULL order_id column values. 
+This is important if a customer hasn't ordered anything –
+in that case, COUNT(*) would return 1 instead of 0 because there would be one row with the given customer_id and a NULL value in the order_id column.
+
+
+
+
+
+
+
+
