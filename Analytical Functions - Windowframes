@@ -1,0 +1,409 @@
+Window frames define precisely which rows should be taken into account when computing the results and are always relative to the current row. 
+In this way, we can create new kinds of queries.
+
+For instance, you may say that for each row, 3 rows before and 3 rows after it are taken into account; or rows from the beginning of the partition until the current row. 
+In a moment, you'll discover how such queries can come in handy. Take a look at the example window frame, where two rows before and two rows after the current row are selected:
+
+
+The are two kinds of window frames: those with the keyword ROWS and those with RANGE instead. The general syntax is as follows:
+
+<window function> OVER (...
+  ORDER BY <order_column>
+  [ROWS|RANGE] <window frame extent>
+)
+Of course, other elements might be added above (for instance, a PARTITION BY clause), which is why we put dots (...) in the brackets. 
+For now, we'll focus on the meaning of ROWS and RANGE. We'll talk about PARTITION BY later in the course.
+
+Let's take a look at the example:
+
+SELECT
+  id,
+  total_price,
+  SUM(total_price) OVER(
+    ORDER BY placed
+    ROWS UNBOUNDED PRECEDING)
+FROM single_order
+
+
+In the above query, we sum the column total_price. For each row, we add the current row AND all the previously introduced rows (UNBOUNDED PRECEDING) to the sum. 
+As a result, the sum will increase with each new order.
+
+
+ Let's jump into the brackets of OVER(...) and discuss the details. We'll start with ROWS, because they are a bit easier to explain than RANGE. The general syntax is as follows:
+
+ROWS BETWEEN lower_bound AND upper_bound
+You know BETWEEN already – it's used to define a range. So far, you've used it to define a range of values – this time, we're going to use it to define a range of rows instead.
+What are the two bounds? The bounds can be any of the five options:
+
+UNBOUNDED PRECEDING – the first possible row.
+
+PRECEDING – the n-th row before the current row (instead of n, write the number of your choice).
+
+CURRENT ROW – simply current row.
+
+FOLLOWING – the n-th row after the current row.
+
+UNBOUNDED FOLLOWING – the last possible row.
+
+
+The lower bound must come BEFORE the upper bound. In other words, a construction like: ...
+ROWS BETWEEN CURRENT ROW AND UNBOUNDED PRECEDING doesn't make sense and you'll get an error if you run it.
+
+
+
+Compute:
+the total price of all orders placed so far (this kind of sum is called a running total),
+the total price of the current order, 3 preceding orders and 3 following orders.
+
+
+SELECT
+  id,
+  total_price,
+  SUM(total_price) OVER(ORDER BY placed ROWS UNBOUNDED PRECEDING) AS running_total,
+  SUM(total_price) OVER(ORDER BY placed ROWS between 3 PRECEDING and 3 FOLLOWING) AS sum_3_before_after
+FROM single_order
+ORDER BY placed;
+
+Syntx reminder:
+
+SELECT
+  id,
+  quantity,
+  changed,
+  SUM(quantity) OVER(
+    ORDER BY changed
+    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+FROM stock_change
+
+
+
+For each order, show its id, the placed date, and the third column which will count the number of orders up to the current order when sorted by the placed date.
+
+SELECT
+  id,
+  placed,
+  COUNT(id) OVER(
+    ORDER BY placed
+    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+FROM single_order;
+
+
+
+Warehouse workers always need to pick the products for orders by hand and one by one. For positions with order_id = 5, calculate the remaining sum of all the products to pick.
+For each position from that order, show its id, the id of the product, the quantity and the quantity of the remaining items
+(including the current row) when sorted by the id in the ascending order.
+
+
+SELECT
+  id,
+  product_id,
+  quantity,
+  SUM(quantity) OVER(
+    ORDER BY id
+    ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING)
+FROM order_position
+WHERE order_id = 5;
+
+
+For each product, show its id, name, introduced date and the count of products introduced up to that point.
+
+
+SELECT 	id,
+  		name,
+ 		introduced,
+  		COUNT (id) OVER ( ORDER BY introduced
+                         ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) 
+FROM product;       
+
+
+
+
+For each single_order, show its placed date, total_price, the average price calculated by taking 2 previous orders, 
+the current order and 2 following orders (in terms of the placed date) and the ratio of the total_price to the average price calculated as before.
+
+SELECT
+  placed,
+  total_price,
+  AVG(total_price) OVER(ORDER BY placed ROWS BETWEEN 2 PRECEDING AND 2 FOLLOWING),
+  total_price / AVG(total_price) OVER(ORDER BY placed ROWS BETWEEN 2 PRECEDING AND 2 FOLLOWING)
+FROM single_order;
+
+
+ If our window frame has CURRENT ROW as one of the boundaries, we can also use some abbreviated syntax to make things easier:
+
+ROWS UNBOUNDED PRECEDING means BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+ROWS n PRECEDING means BETWEEN n PRECEDING AND CURRENT ROW
+ROWS CURRENT ROW means BETWEEN CURRENT ROW AND CURRENT ROW
+Note: these rules don't apply for FOLLOWING, only for PRECEDING and CURRENT ROW. As a way of example, the query:
+
+SELECT
+  id,
+  name,
+  introduced,
+  COUNT(id) OVER(ORDER BY introduced ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+FROM product;
+Can be rewritten to:
+
+SELECT
+  id,
+  name,
+  introduced,
+  COUNT(id) OVER(ORDER BY introduced ROWS UNBOUNDED PRECEDING)
+FROM product;
+
+
+Pick those stock changes which refer to product_id = 3. For each of them, show the id, changed date, quantity, and the running total, indicating the current stock status. 
+Sort the rows by the changed date in the ascending order.
+
+
+SELECT id, changed, quantity, 
+	SUM ( quantity) OVER (
+    					ORDER BY changed ROWS UNBOUNDED PRECEDING
+    					  )
+FROM stock_change
+WHERE product_id = 3
+ORDER BY changed ASC
+
+
+
+For each single_order, show its placed date, total_price and the average price from the current single_order and three previous orders (in terms of the placed date).
+
+
+SELECT
+  placed,
+  total_price,
+  AVG (total_price) OVER (ORDER BY placed ROWS BETWEEN 3 PRECEDING AND CURRENT ROW)
+  FROM single_order;
+  
+  
+  
+  
+It's time to look at another type of window frame: RANGE.
+
+The difference between ROWS and RANGE is that RANGE will take into account all rows that have the same value in the column which we order by. 
+This might be helpful with dates. Consider the following problem: we want to calculate the running sum from all orders sorted by date. We could write something like this:
+
+SELECT
+  id,
+  placed,
+  total_price,
+  SUM(total_price) OVER (ORDER BY placed ROWS UNBOUNDED PRECEDING)
+FROM single_order;
+Diagram A
+And it works fine. But our boss could say: hey, I don't really need to see how the running sum changed during single days. Just show the values at the end of the day; 
+if there are multiple orders on a single day, add them together.
+
+The above may be implemented by changing ROWS to RANGE. Look how we highlighted the rows which now share the same running sum because they come from the same date.
+
+SELECT
+  id,
+  placed,
+  total_price,
+  SUM(total_price) OVER(ORDER BY placed RANGE UNBOUNDED PRECEDING)
+FROM single_order;
+
+
+
+show the average total_price for single days for each row.
+
+
+SELECT
+  id,
+  placed,
+  total_price,
+  AVG(total_price) OVER(ORDER BY placed RANGE CURRENT ROW)
+FROM single_order;
+
+
+The difference between ROWS and RANGE is similar to the difference between the ranking functions ROW_NUMBER and RANK()
+
+The query with ROWS sums the total_price for all rows which have their ROW_NUMBER less than or equal to the row number of the current row.
+
+SELECT
+  id,
+  placed,
+  total_price,
+  ROW_NUMBER() OVER(ORDER BY placed),
+  SUM(total_price) OVER(
+    ORDER BY placed
+    ROWS UNBOUNDED PRECEDING)
+FROM single_order
+Diagram A
+
+The query with RANGE sums the total_price for all rows which have their RANK() less than or equal to the rank of the current row.
+
+SELECT
+  id,
+  placed,
+  total_price,
+  RANK() OVER(ORDER BY placed),
+  SUM(total_price) OVER(
+    ORDER BY placed
+    RANGE UNBOUNDED PRECEDING)
+FROM single_order
+
+
+
+The window frame of RANGE is defined just like the window frame of ROWS: use BETWEEN ... AND ..., or the abbreviated version.
+
+You can use RANGE UNBOUNDED PRECEDING and RANGE BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING, as well as RANGE CURRENT ROW, 
+but you can't use n PRECEDING and n FOLLOWING with RANGE.
+
+Why? With ROWS, we always knew that there was a single current row, and so we could easily calculate the previous/next rows. 
+With RANGE, the database must understand what "three preceding values" means. It's easy to understand "three preceding days" but what are "three numbers preceding 14.5"? 
+The SQL standard defined the meaning of n PRECEDING and n FOLLOWING for RANGE, but the database usually do not implement it. 
+Refer to the documentation of your database to make sure.
+
+
+
+For each stock_change with product_id = 7, show its id, quantity, changed date and another column which will count the number of stock changes with product_id = 7 
+on that particular date.
+
+
+SELECT
+  id,
+  quantity,
+  changed,
+  COUNT(id) OVER(ORDER BY changed RANGE CURRENT ROW)
+FROM stock_change
+WHERE product_id = 7;
+
+
+For each stock_change, show id, product_id, quantity, changed date, and the total quantity change from all stock_change for that product.
+
+SELECT
+  id,
+  product_id,
+  quantity,
+  changed,
+  SUM(quantity) OVER(ORDER BY product_id RANGE CURRENT ROW)
+FROM stock_change;
+
+
+For each stock_change, show its id, changed date, and the number of any stock changes that took place on the same day or any time earlier.
+
+SELECT
+  id,
+  changed,
+  COUNT(id) OVER(ORDER BY changed RANGE UNBOUNDED PRECEDING)
+FROM stock_change;
+
+
+
+Our finance department needs to calculate future cashflows for each date. Let's help them. In order to do that, we need to show each order: 
+its id, placed date, total_price and the total sum of all prices of orders from the very same day or any later date.
+
+SELECT
+  id,
+  placed,
+  total_price,
+  SUM(total_price) OVER(
+    ORDER BY placed
+    RANGE BETWEEN CURRENT ROW
+      AND UNBOUNDED FOLLOWING)
+FROM single_order;
+
+
+You may wonder what the default window frame is when it's not explicitly specified. This may differ between databases, but the most typical rule is as follows:
+If you don't specify an ORDER BY clause within OVER(...), the whole partition of rows will be used as the window frame.
+If you do specify an ORDER BY clause within OVER(...), the database will assume RANGE UNBOUNDED PRECEDING as the window frame. Let's check both of these cases in exercises.
+
+SELECT
+  id,
+  placed,
+  total_price,
+  SUM(total_price) OVER()
+FROM single_order;
+
+
+We'll start with not specifying an ORDER BY clause within OVER(...).
+For each single order, show its id, date when it was placed, the total price and the sum of all total prices.
+Note that the SUM computes the sum of all prices in the table, even though you did not specify the window frame
+
+
+SELECT
+  id,
+  placed,
+  total_price,
+  SUM(total_price) OVER()
+FROM single_order;
+
+
+
+When there is no ORDER BY clause in OVER(...), the query simply treats all rows as the window frame for each row. 
+Nothing shocking, really – that's the kind of queries we wrote in previous parts.
+
+Now, we said the following: if there is an ORDER BY clause, RANGE UNBOUNDED PRECEDING will be used as the default window frame. Let's find out if it's true.
+
+
+Just as in one of the previous exercises, we'll be looking for the running sum of single orders. 
+For each order, show its id, placed date, total_price and the sum of all total prices. Sort the orders by the placed date, but do not specify any window frame.
+
+The sum of total_prices should be calculated as if you wrote RANGE UNBOUNDED PRECEDING.
+
+
+
+
+You can define a window frame within OVER(...). The syntax is: [ROWS|RANGE] <window frame definition>.
+ROWS always treats rows individually (like the ROW_NUMBER() function), RANGE also adds rows which share the same value in the column we order by (like the RANK() function).
+<window frame definition> is defined with BETWEEN <lower bound> AND <upper bound>, where the bounds may be defined with:
+
+UNBOUNDED PRECEDING,
+n PRECEDING (ROWS only),
+CURRENT ROW,
+n FOLLOWING (ROWS only),
+UNBOUNDED FOLLOWING
+
+
+SELECT
+  id,
+  placed,
+  total_price,
+  SUM(total_price) OVER(ORDER BY placed)
+FROM single_order;
+
+
+
+
+For each row from department with id = 2, show its department_id, year, amount and the total amount from the current year + two previous years.
+
+SELECT
+  department_id,
+  year,
+  amount,
+  SUM(amount) OVER(
+    ORDER BY year
+    ROWS BETWEEN 2 PRECEDING AND CURRENT ROW)
+FROM revenue
+WHERE department_id = 2;
+
+
+For each row from department with id = 1, show its department_id, year, amount and the running average amount from all rows up to the current rows, sorted by the year.
+
+SELECT
+  department_id,
+  year,
+  amount,
+  AVG(amount) OVER(ORDER BY year ROWS UNBOUNDED PRECEDING)
+FROM revenue
+WHERE department_id = 1;
+
+
+For each row sorted by the year, show its department_id, year, amount, the average amount from all departments in the given year
+and the difference between the amount and the average amount.
+
+
+SELECT
+  department_id,
+  year,
+  amount,
+  AVG(amount) OVER(ORDER BY year RANGE CURRENT ROW),
+  amount - AVG(amount) OVER(ORDER BY year RANGE CURRENT ROW)
+FROM revenue;
+
+
+
+
+
+
+
