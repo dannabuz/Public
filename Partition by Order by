@@ -1,0 +1,387 @@
+n Part 3, you learned what PARTITION BY is. It allows you to compute certain functions independently for groups of rows and still maintain their individual character.
+
+In Part 3, we only used PARTITION BY with the aggregate functions which you had known before: AVG(), COUNT(), MAX(), MIN(), SUM(). 
+None of these functions required the use of ORDER BY: the order of rows simply doesn't matter in this case.
+
+However, in part 4,5 and 6, you got to know new elements where the order does matter: ranking functions, window frames and analytical functions.
+
+In this part, we'll teach you how to use PARTITION BY with these new elements. Each time, you will also need an ORDER BY clause – hence the name of the part: 
+PARTITION BY ORDER BY. Remember to keep the order: 
+PARTITION BY comes before ORDER BY, or it simply won't make any sense.
+
+
+
+n Part 3, you learned what PARTITION BY is. It allows you to compute certain functions independently for groups of rows and still maintain their individual character.
+
+In Part 3, we only used PARTITION BY with the aggregate functions which you had known before: AVG(), COUNT(), MAX(), MIN(), SUM().
+None of these functions required the use of ORDER BY: the order of rows simply doesn't matter in this case.
+
+However, in part 4,5 and 6, you got to know new elements where the order does matter: ranking functions, window frames and analytical functions.
+
+In this part, we'll teach you how to use PARTITION BY with these new elements. Each time, you will also need an ORDER BY clause – hence the name of the part: 
+PARTITION BY ORDER BY. 
+Remember to keep the order: PARTITION BY comes before ORDER BY, or it simply won't make any sense.
+
+
+SELECT
+  store_id,
+  day,
+  revenue,
+  AVG(revenue) OVER(PARTITION BY store_id)
+FROM sales;
+
+
+
+
+For each sales row between August 1 and August 7, 2016, show the store_id, day, number of transactions, 
+the total number of transactions on that day in any store and the ratio of the two last columns shown as percentage rounded to integer values.
+
+
+SELECT
+  store_id,
+  day,
+  transactions,
+  SUM(transactions) OVER(PARTITION BY day),
+  ROUND(transactions::numeric / SUM(transactions) OVER(PARTITION BY day)*100)
+FROM sales
+WHERE day BETWEEN '2016-08-01' AND '2016-08-07';
+
+
+In part 4, you learned ranking functions. They are one of the places where you can apply PARTITION BY and ORDER BY together.
+
+So far, all the rankings we calculated were performed for all the rows from the query result. With that knowledge, we could have calculated the position of each store in the global network based on their ratings:
+
+SELECT
+  id,
+  country,
+  city,
+  rating,
+  RANK() OVER(ORDER BY rating DESC)
+FROM store;
+Diagram A
+Now, we can add PARTITION BY to calculate the positions independently for each country:
+
+SELECT
+  id,
+  country,
+  city,
+  rating,
+  RANK() OVER(PARTITION BY country ORDER BY rating DESC)
+FROM store;
+In this way, we create a separate ranking for each country, so Paris and Frankfurt can both get rank = 1 for the separate rankings in France and Germany:
+
+diagram
+Exercise
+Take into account the period between August 10 and August 14, 2016. For each row of sales, show the following information: store_id, day, number of customers and the rank based on the number of customers in the particular store (in descending order).
+
+
+
+SELECT
+  store_id,
+  day,
+  customers,
+  RANK() OVER (PARTITION BY store_id ORDER BY customers DESC)
+FROM sales
+WHERE day BETWEEN '2016-08-10' AND '2016-08-14';
+
+
+Of course, you can use any other ranking function in the same way:
+
+SELECT
+  id,
+  country,
+  city,
+  rating,
+  NTILE(2) OVER(PARTITION BY country ORDER BY opening_day)
+FROM store;
+In the above query, the stores are divided into two groups: older and more recent stores. These groups are created separately for each country.
+
+Exercise
+Take the sales between August 1 and August 10, 2016. For each row, show the store_id, the day, the revenue on that day and quartile number (quartile means we divide the rows into four groups) based on the revenue of the given store in the descending order.
+
+
+SELECT
+  store_id,
+  day,
+  revenue,
+  NTILE(4) OVER (PARTITION BY store_id ORDER BY revenue DESC)
+FROM sales
+WHERE day BETWEEN '2016-08-01' AND '2016-08-10';
+
+
+
+WITH ranking AS (
+  SELECT
+    country,
+    city,
+    RANK() OVER(PARTITION BY country ORDER BY rating DESC) AS rank
+  FROM store
+)
+
+SELECT
+  country,
+  city
+FROM ranking
+WHERE rank = 1;
+The CTE in the parentheses creates a separate ranking of stores in each country based on their rating. In the outer query, we simply return the rows with the right rank. As a result, we'll see the best store in each country.
+
+Exercise
+For each store, show a row with three columns: store_id, the revenue on the best day in that store in terms of the revenue and the day when that best revenue was achieved.
+
+
+
+WITH ranking AS (
+  SELECT
+    store_id,
+    revenue,
+    day,
+    RANK() OVER(PARTITION BY store_id ORDER BY revenue DESC) AS rank
+  FROM sales
+)
+
+SELECT
+  store_id,
+  revenue,
+  day
+FROM ranking
+WHERE rank = 1;
+
+
+
+Let's analyze sales data between August 1 and August 3, 2016. For each row, show store_id, day, transactions and the ranking of the store on that day in terms of the number of transactions as compared to other stores. The store with the greatest number should get 1 from a window function. Use individual row ranks even when two rows share the same value. Name the column place_no.
+
+SELECT
+  store_id,
+  day,
+  transactions,
+  ROW_NUMBER() OVER (PARTITION BY day ORDER BY transactions DESC) AS place_no
+FROM sales
+WHERE day
+BETWEEN '2016-08-01' AND '2016-08-03';
+
+
+For each day of the sales statistics, show the day, the store_id of the best store in terms of the revenue on that day, and that revenue.
+
+
+WITH ranking AS (
+  SELECT
+    store_id,
+    day,
+    revenue,
+    RANK() OVER(PARTITION BY day ORDER BY revenue DESC) AS rank
+  FROM sales
+)
+
+SELECT
+  store_id,
+  day,
+  revenue
+FROM ranking
+WHERE rank = 1;
+
+
+
+
+Divide the sales results for each store into four groups based on the number of transactions and for each store, show the rows in the group with the lowest numbers of transactions: store_id, day, transactions
+
+
+
+WITH ranking AS (
+  SELECT
+    store_id,
+    day,
+    transactions,
+    NTILE(4) OVER(PARTITION BY store_id ORDER BY transactions) AS quartile
+  FROM sales
+)
+
+SELECT
+  store_id,
+  day,
+  transactions
+FROM ranking
+WHERE quartile = 1;
+
+
+n part 5, you got to know window frames. Can we use them together with PARTITION BY to create even more sophisticated windows? Of course we can. Take a look:
+
+SELECT
+  id,
+  country,
+  city,
+  opening_day,
+  rating,
+  MAX(rating) OVER(
+    PARTITION BY country
+    ORDER BY opening_day
+    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+FROM store;
+In the above example, we show some information about each store and the maximal rating of any store opened up to that date (that's where we need a window frame) in the respective country (that's where we need PARTITION BY).
+
+Exercise
+Show sales statistics between August 1 and August 7, 2016. For each row, show store_id, day, revenue and the best revenue in the respective store up to that date.
+
+
+SELECT
+  store_id,
+  day,
+  revenue,
+  MAX(revenue) OVER(
+    PARTITION BY store_id
+    ORDER BY day
+    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+FROM sales
+WHERE day BETWEEN '2016-08-01' AND '2016-08-07';
+
+
+By the same token, you can use PARTITION BY ORDER BY with any other window frame. Shall we practice a bit more?
+
+Exercise
+Take sales from the period between August 1 and August 10, 2016. For each row, show the following information: store_id, day, number of transactions and the average number of transactions in the respective store in the window frame starting 2 days before and ending 2 days later with respect to the current row.
+
+
+SELECT
+  store_id,
+  day,
+  transactions,
+  AVG(transactions) OVER(
+    PARTITION BY store_id
+    ORDER BY day
+    ROWS BETWEEN 2 PRECEDING AND 2 FOLLOWING)
+FROM sales
+WHERE day BETWEEN '2016-08-01' AND '2016-08-10';
+
+
+
+For each sales row, show the following information: store_id, day, revenue and the future cash flow receivable by the headquarters (i.e. the total revenue in that store, counted from the current day until the last day in our table).
+
+
+SELECT
+  store_id,
+  day,
+  revenue,
+  SUM(revenue) OVER(
+    PARTITION BY store_id
+    ORDER BY day
+    ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING)
+FROM sales
+
+
+Now, let's talk about the use of analytical functions with PARTITION BY ORDER BY. Take a look at the following example:
+
+SELECT
+  country,
+  city,
+  opening_day,
+  LEAD(city, 1, 'NaN') OVER(PARTITION BY country ORDER BY opening_day)
+FROM store;
+In the above example, we show the country, city and opening_day of each store, but we also show the city where the next store was opened – in the same country, of course.
+
+Exercise
+For each store, show the sales in the period between August 5, 2016 and August 10, 2016: store_id, day, number of transactions, number of transactions on the previous day and the difference between these two values
+
+
+SELECT
+  store_id,
+  day,
+  transactions,
+  LAG(transactions) OVER(PARTITION BY store_id ORDER BY day),
+  transactions - LAG(transactions) OVER(PARTITION BY store_id ORDER BY day)
+FROM sales
+WHERE day BETWEEN '2016-08-05' AND '2016-08-10';
+
+
+
+other analytical functions are possible as well. Let's analyze another example:
+
+SELECT
+  country,
+  city,
+  rating,
+  FIRST_VALUE(city) OVER(PARTITION BY country ORDER BY rating DESC)
+FROM store;
+In the above query, we're showing each store individually, but we also show the name of the city with the highest rating in that particular country. Note that this would be impossible without PARTITION BY – we couldn't get individual city names for each country separately.
+
+Exercise
+Show sales figures in the period between August 1 and August 3: for each store, show the store_id, the day, the revenue and the date with the best revenue in that period as best_revenue_day.
+
+
+SELECT
+  store_id,
+  day,
+  revenue,
+  FIRST_VALUE(day) OVER(PARTITION BY store_id ORDER BY revenue DESC) AS best_revenue_day
+FROM sales
+WHERE day BETWEEN '2016-08-01' AND '2016-08-03';
+
+
+For each row of the sales figures, show the following information: store_id, day, revenue, revenue a week before and the ratio of revenue today to the revenue a week before expressed in percentage with 2 decimal places.
+
+
+
+SELECT
+  store_id,
+  day,
+  revenue,
+  LAG(revenue,7) OVER(PARTITION BY store_id ORDER BY day),
+  ROUND(revenue / LAG(revenue, 7) OVER(PARTITION BY store_id ORDER BY day) * 100, 2)
+FROM sales;
+
+
+
+
+For each row, show the following columns: store_id, day, customers and the number of clients in the 5th greatest store in terms of the number of customers on that day.
+
+SELECT
+  store_id,
+  day,
+  customers,
+  NTH_VALUE(customers, 5) OVER(
+    PARTITION BY day
+    ORDER BY customers DESC
+    ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+FROM sales;
+
+
+
+You can use PARTITION BY ORDER BY to create rankings and do row-level analytics independently for each partition in a single SQL query.
+
+
+
+For each day, show the following two columns: day and the name of the second most frequently repaired phone on that day. Only take into account free_repairs.
+
+
+WITH ranking AS (
+  SELECT
+    day,
+    phone,
+    RANK() OVER(PARTITION BY day ORDER BY free_repairs DESC) AS rank
+  FROM repairs
+)
+
+For each phone, show the following information: phone, day, revenue and the revenue for the first repair for each phone (column name first_revenue)
+
+
+SELECT
+  phone,
+  day,
+  revenue,
+  FIRST_VALUE(revenue) OVER(
+    PARTITION BY phone
+    ORDER BY day
+    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS first_revenue
+FROM repairs;
+
+
+For each phone, show the following information: phone, day, the number of paid repairs, the number of paid repairs on the previous day and the difference between these two values.
+
+
+SELECT
+  phone,
+  day,
+  paid_repairs,
+  LAG(paid_repairs) OVER(PARTITION BY phone ORDER BY day),
+  paid_repairs - LAG(paid_repairs) OVER(PARTITION BY phone ORDER BY day)
+FROM repairs;
+
+
